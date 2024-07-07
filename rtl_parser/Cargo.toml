@@ -1,0 +1,9 @@
+[package]
+name = "rtl_parser"
+version = "0.1.0"
+edition = "2021"
+description = "The parser for Rattle"
+
+[dependencies]
+proc-macro2 = "1.0.86"
+syn = { version = "2.0.68", features = ["full"] }

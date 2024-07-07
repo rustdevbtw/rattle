@@ -1,0 +1,3 @@
+[workspace]
+members = ["rtl_parser", "rtlc"]
+resolver = "2"
