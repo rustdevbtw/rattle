@@ -1,3 +1,6 @@
+#![deny(warnings, nonstandard_style)]
+#![allow(dead_code)]
+
 use std::str::FromStr;
 
 use proc_macro2::TokenStream;
@@ -217,12 +220,12 @@ impl Parse for RtlFn {
             }
         }
         let ret: Ident = input.parse()?;
-        let body: RtlBody = RtlBody;
+        let mut body: RtlBody = RtlBody;
         let forked = input.fork();
         if forked.parse::<Token![;]>().is_ok() {
             input.parse::<Token![;]>()?;
         } else {
-            let body: RtlBody = input.parse()?;
+            body = input.parse()?;
         }
 
         Ok(RtlFn {
@@ -362,13 +365,13 @@ impl Parse for RtlGen {
 
 // Dummy implementations for RtlExpr, RtlBody, RtlImport, RtlPub to make the code compile
 impl Parse for RtlExpr {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(_input: ParseStream) -> Result<Self> {
         Ok(RtlExpr)
     }
 }
 
 impl Parse for RtlBody {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(_input: ParseStream) -> Result<Self> {
         Ok(RtlBody)
     }
 }

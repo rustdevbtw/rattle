@@ -1,4 +1,5 @@
-#![allow(dead_code, unused_variables)]
+#![deny(warnings, nonstandard_style)]
+#![allow(dead_code)]
 
 use inkwell::{
     builder::Builder,
@@ -135,10 +136,6 @@ impl PartialEq for JitValue {
             (JitValue::String(l), JitValue::String(r)) => l == r,
             _ => false,
         }
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
     }
 }
 
@@ -322,7 +319,7 @@ impl<'ctx> JitCompiler<'ctx> {
     pub fn get_auto(&self, name: &'static str) -> RtlResult<JitValue> {
         self.get(name)?
             .ok_or_else(|| format!("Variable '{}' not found", name).into())
-            .map(|v| v.clone())
+            .cloned()
     }
 
     /// Implements a switch-case-like structure.
