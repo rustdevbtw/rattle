@@ -1,24 +1,130 @@
 #![allow(dead_code, unused_variables)]
 
-use inkwell::context::Context;
-use inkwell::execution_engine::{ExecutionEngine, JitFunction};
-use inkwell::module::Module;
-use inkwell::targets::{InitializationConfig, Target};
-use inkwell::OptimizationLevel;
-use std::cmp::PartialEq;
-use std::collections::HashMap;
-use std::error::Error;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use inkwell::{
+    builder::Builder,
+    context::Context,
+    execution_engine::{ExecutionEngine, JitFunction},
+    module::Module,
+    targets::{InitializationConfig, Target},
+    types::BasicTypeEnum,
+    AddressSpace, OptimizationLevel,
+};
+pub(crate) use std::error::Error;
+pub(crate) use std::{
+    cmp::PartialEq,
+    collections::HashMap,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
-/// A custom result type for the JIT compiler.
-pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+/// A custom result type for the Jit compiler.
+pub type RtlResult<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// An enum to represent different types of values in the JIT compiler.
+/// An enum to represent different types of values in the Jit compiler.
 #[derive(Debug, Clone)]
 pub enum JitValue {
     Int(i128),
     String(String),
     Float(f64), // Add more types as needed
+}
+
+pub fn jit_to_llvm<'ctx>(ctx: &'ctx Context, ty: &JitValue) -> BasicTypeEnum<'ctx> {
+    match ty {
+        JitValue::Int(_) => ctx.i128_type().into(),
+        JitValue::Float(_) => ctx.f64_type().into(),
+        JitValue::String(_) => ctx.ptr_type(AddressSpace::default()).into(),
+    }
+}
+
+impl From<f64> for JitValue {
+    fn from(v: f64) -> Self {
+        Self::Float(v)
+    }
+}
+
+impl From<String> for JitValue {
+    fn from(v: String) -> Self {
+        Self::String(v)
+    }
+}
+
+impl From<i128> for JitValue {
+    fn from(v: i128) -> Self {
+        Self::Int(v)
+    }
+}
+
+impl JitValue {
+    /// Returns `true` if the jit value is [`Int`].
+    ///
+    /// [`Int`]: JitValue::Int
+    #[must_use]
+    pub fn is_int(&self) -> bool {
+        matches!(self, Self::Int(..))
+    }
+
+    pub fn as_int(&self) -> Option<&i128> {
+        if let Self::Int(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn try_into_int(self) -> Result<i128, Self> {
+        if let Self::Int(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Returns `true` if the jit value is [`String`].
+    ///
+    /// [`String`]: JitValue::String
+    #[must_use]
+    pub fn is_string(&self) -> bool {
+        matches!(self, Self::String(..))
+    }
+
+    pub fn as_string(&self) -> Option<&String> {
+        if let Self::String(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn try_into_string(self) -> Result<String, Self> {
+        if let Self::String(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Returns `true` if the jit value is [`Float`].
+    ///
+    /// [`Float`]: JitValue::Float
+    #[must_use]
+    pub fn is_float(&self) -> bool {
+        matches!(self, Self::Float(..))
+    }
+
+    pub fn as_float(&self) -> Option<&f64> {
+        if let Self::Float(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn try_into_float(self) -> Result<f64, Self> {
+        if let Self::Float(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
 }
 
 impl PartialEq for JitValue {
@@ -29,6 +135,10 @@ impl PartialEq for JitValue {
             (JitValue::String(l), JitValue::String(r)) => l == r,
             _ => false,
         }
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
     }
 }
 
@@ -78,14 +188,20 @@ impl Div for JitValue {
     fn div(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (JitValue::Int(left), JitValue::Int(right)) => {
-                if right == 0 {
-                    panic!("Division by zero");
+                match right == 0 {
+                    true => {
+                        panic!("Division by zero");
+                    }
+                    false => (),
                 }
                 JitValue::Int(left / right)
             }
             (JitValue::Float(left), JitValue::Float(right)) => {
-                if right == 0f64 {
-                    panic!("Division by zero");
+                match right == 0f64 {
+                    true => {
+                        panic!("Division by zero");
+                    }
+                    false => (),
                 }
                 JitValue::Float(left / right)
             }
@@ -101,14 +217,20 @@ impl Rem for JitValue {
     fn rem(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (JitValue::Int(left), JitValue::Int(right)) => {
-                if right == 0 {
-                    panic!("Division by zero");
+                match right == 0 {
+                    true => {
+                        panic!("Division by zero");
+                    }
+                    false => (),
                 }
                 JitValue::Int(left % right)
             }
             (JitValue::Float(left), JitValue::Float(right)) => {
-                if right == 0f64 {
-                    panic!("Division by zero");
+                match right == 0f64 {
+                    true => {
+                        panic!("Division by zero");
+                    }
+                    false => (),
                 }
                 JitValue::Float(left % right)
             }
@@ -117,22 +239,29 @@ impl Rem for JitValue {
     }
 }
 
-/// Metadata for JIT variables.
+/// Metadata for Jit variables.
 pub struct JitMeta {
     is_mut: bool,
 }
 
-/// A struct representing the JIT compiler.
-struct JITCompiler<'ctx> {
+impl JitMeta {
+    pub fn new(is_mut: bool) -> Self {
+        Self { is_mut }
+    }
+}
+
+/// A struct representing the Jit compiler.
+struct JitCompiler<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     execution_engine: ExecutionEngine<'ctx>,
+    builder: Builder<'ctx>,
     var_types: HashMap<&'static str, (JitMeta, JitValue)>,
     should_execute: bool,
 }
 
-impl<'ctx> JITCompiler<'ctx> {
-    /// Creates a new JITCompiler instance.
+impl<'ctx> JitCompiler<'ctx> {
+    /// Creates a new JitCompiler instance.
     pub fn new(context: &'ctx Context, module_name: &str) -> Self {
         Target::initialize_native(&InitializationConfig::default())
             .expect("Failed to initialize native target");
@@ -140,12 +269,14 @@ impl<'ctx> JITCompiler<'ctx> {
         let module = context.create_module(module_name);
         let execution_engine = module
             .create_jit_execution_engine(OptimizationLevel::Aggressive)
-            .expect("Failed to create JIT execution engine");
+            .expect("Failed to create Jit execution engine");
+        let builder = context.create_builder();
 
         Self {
             context,
             module,
             execution_engine,
+            builder,
             var_types: HashMap::new(),
             should_execute: true, // Start with execution enabled
         }
@@ -183,12 +314,12 @@ impl<'ctx> JITCompiler<'ctx> {
     }
 
     /// Gets a reference to a variable.
-    pub fn get(&self, name: &'static str) -> Result<Option<&JitValue>> {
+    pub fn get(&self, name: &'static str) -> RtlResult<Option<&JitValue>> {
         Ok(self.var_types.get(name).map(|s| &s.1))
     }
 
     /// Gets a cloned value of a variable.
-    pub fn get_auto(&self, name: &'static str) -> Result<JitValue> {
+    pub fn get_auto(&self, name: &'static str) -> RtlResult<JitValue> {
         self.get(name)?
             .ok_or_else(|| format!("Variable '{}' not found", name).into())
             .map(|v| v.clone())
@@ -200,7 +331,7 @@ impl<'ctx> JITCompiler<'ctx> {
         name: &'static str,
         cases: Vec<(JitValue, JitValue)>,
         default: JitValue,
-    ) -> Result<JitValue> {
+    ) -> RtlResult<JitValue> {
         let actual = self.get_auto(name)?;
         for case in cases {
             if actual == case.0 {
@@ -210,8 +341,11 @@ impl<'ctx> JITCompiler<'ctx> {
         Ok(default)
     }
 
-    /// Runs a JIT-compiled function.
-    pub fn run_function(&self, jit_fn: JitFunction<unsafe extern "C" fn() -> i32>) -> Result<i32> {
+    /// Runs a Jit-compiled function.
+    pub fn run_function(
+        &self,
+        jit_fn: JitFunction<unsafe extern "C" fn() -> i32>,
+    ) -> RtlResult<i32> {
         Ok(unsafe { jit_fn.call() })
     }
 
@@ -221,7 +355,7 @@ impl<'ctx> JITCompiler<'ctx> {
     }
 }
 
-/// A macro to convert JIT values to strings.
+/// A macro to convert Jit values to strings.
 #[macro_export]
 macro_rules! typed {
     ($jit_compiler:expr, $name:expr) => {{
@@ -238,12 +372,9 @@ macro_rules! typed {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> RtlResult<()> {
     let context = Context::create();
-
-    // Create JIT compiler instance
-    let mut jit_compiler = JITCompiler::new(&context, "jit_module");
-
+    let mut jit_compiler = JitCompiler::new(&context, "jit_module");
     // Declare a mutable integer variable
     jit_compiler.decl_var_mut("val", JitValue::Int(10));
 
@@ -275,7 +406,7 @@ mod tests {
     #[test]
     fn test_addition() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("a", JitValue::Int(10));
         jit_compiler.assign_var("a", JitValue::Int(20));
@@ -302,7 +433,7 @@ mod tests {
     #[test]
     fn test_subtraction() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("a", JitValue::Int(10));
         jit_compiler.assign_var("a", JitValue::Int(20));
@@ -327,7 +458,7 @@ mod tests {
     #[test]
     fn test_multiplication() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("a", JitValue::Int(5));
         jit_compiler.assign_var("a", jit_compiler.get_auto("a").unwrap() * JitValue::Int(2));
@@ -351,7 +482,7 @@ mod tests {
     #[test]
     fn test_division() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("a", JitValue::Int(20));
         jit_compiler.assign_var("a", jit_compiler.get_auto("a").unwrap() / JitValue::Int(2));
@@ -375,7 +506,7 @@ mod tests {
     #[test]
     fn test_modulus() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("a", JitValue::Int(21));
         jit_compiler.assign_var("a", jit_compiler.get_auto("a").unwrap() % JitValue::Int(4));
@@ -399,7 +530,7 @@ mod tests {
     #[test]
     fn test_switch() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var_mut("case", JitValue::Int(1));
 
@@ -438,7 +569,7 @@ mod tests {
     #[test]
     fn test_typed_macro() {
         let context = Context::create();
-        let mut jit_compiler = JITCompiler::new(&context, "jit_test");
+        let mut jit_compiler = JitCompiler::new(&context, "jit_test");
 
         jit_compiler.decl_var("test_int", JitValue::Int(42));
         jit_compiler.decl_var("test_float", JitValue::Float(3.14));
